@@ -1,4 +1,5 @@
-";
+
+import fs from "fs";
 import path from "path";
 import cors from "cors";
 import express from "express";
@@ -10,8 +11,9 @@ import { MongoClient } from "mongodb";
 import env from "./environments";
 import mountPaymentsEndpoints from "./handlers/payments";
 import mountUserEndpoints from "./handlers/users";
-import "./types/session";
 import mountNotificationEndpoints from "./handlers/notifications";
+import mountMineralListingEndpoints from "./handlers/mineralListings";
+import "./types/session";
 
 if (!env.mongodb_uri) {
   throw new Error("MONGODB_URI environment variable is required");
@@ -80,8 +82,14 @@ const notificationRouter = express.Router();
 mountNotificationEndpoints(notificationRouter);
 app.use("/notifications", notificationRouter);
 
+const mineralListingRouter = express.Router();
+mountMineralListingEndpoints(mineralListingRouter);
+app.use("/mineral-listings", mineralListingRouter);
+
 app.get("/", async (_, res) => {
-  res.status(200).send({ message: "GFAMOUS MINERAL MARKET API is running" });
+  res.status(200).send({
+    message: "GFAMOUS MINERAL MARKET API is running",
+  });
 });
 
 const start = async () => {
@@ -111,4 +119,8 @@ const start = async () => {
       await client.close().catch(() => undefined);
     }
 
-    process.exit
+    process.exit(1);
+  }
+};
+
+start();
