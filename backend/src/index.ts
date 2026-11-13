@@ -1,4 +1,3 @@
-
 import fs from "fs";
 import path from "path";
 import cors from "cors";
@@ -112,8 +111,4 @@ const start = async () => {
       await client.close().catch(() => undefined);
     }
 
-    process.exit(1);
-  }
-};
-
-start();
+    process.exit( 
