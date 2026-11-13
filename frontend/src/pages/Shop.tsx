@@ -1,12 +1,88 @@
-import Header from "../components/Header";
-import ProductCard from "../components/ProductCard";
-import SignIn from "../components/SignIn";
-import SubscriptionCard from "../components/SubscriptionCard";
 
+import { useCallback, useEffect, useState } from "react";
+import type { FormEvent } from "react";
+
+import Header from "../components/Header";
+import SignIn from "../components/SignIn";
 import { useAuth } from "../hooks/useAuth";
-import { IRRA_TOKEN_CANONICAL, usePayments } from "../hooks/usePayments";
-import { useSubscriptions } from "../hooks/useSubscriptions";
-import { axiosClient } from "../lib/axiosClient.ts";
+import { axiosClient } from "../lib/axiosClient";
+
+interface MineralListing {
+  _id?: string;
+  id?: string;
+  mineralType: string;
+  description: string;
+  location: string;
+  weight: number;
+  weightUnit: string;
+  price: number;
+  currency: string;
+  contact: string;
+  imageUrls?: string[];
+  sellerName?: string;
+  createdAt?: string;
+}
+
+interface ListingForm {
+  mineralType: string;
+  description: string;
+  location: string;
+  weight: string;
+  weightUnit: string;
+  price: string;
+  currency: string;
+  contact: string;
+  imageUrls: string;
+}
+
+const initialForm: ListingForm = {
+  mineralType: "",
+  description: "",
+  location: "",
+  weight: "",
+  weightUnit: "kg",
+  price: "",
+  currency: "TZS",
+  contact: "",
+  imageUrls: "",
+};
+
+const pageStyle = {
+  maxWidth: "1100px",
+  margin: "0 auto",
+  padding: "20px",
+  fontFamily: "Arial, sans-serif",
+  color: "#202020",
+} as const;
+
+const cardStyle = {
+  background: "#ffffff",
+  border: "1px solid #e2e2e2",
+  borderRadius: "12px",
+  padding: "18px",
+  marginBottom: "18px",
+} as const;
+
+const inputStyle = {
+  width: "100%",
+  padding: "12px",
+  marginTop: "6px",
+  marginBottom: "14px",
+  border: "1px solid #cccccc",
+  borderRadius: "7px",
+  boxSizing: "border-box" as const,
+  fontSize: "15px",
+};
+
+const buttonStyle = {
+  background: "#176b43",
+  color: "white",
+  border: "none",
+  borderRadius: "7px",
+  padding: "12px 18px",
+  cursor: "pointer",
+  fontWeight: "bold" as const,
+};
 
 const Shop = () => {
   const {
@@ -20,29 +96,189 @@ const Shop = () => {
     isLoading: isAuthLoading,
   } = useAuth();
 
-  const { orderProduct, isLoading } = usePayments({
-    isAuthenticated,
-    onRequireAuth: requireAuth,
-  });
+  const [listings, setListings] = useState<MineralListing[]>([]);
+  const [form, setForm] = useState<ListingForm>(initialForm);
 
-  const {
-    subscribe,
-    processSubscriptions,
-    result: subscriptionResult,
-    isLoading: isSubscriptionLoading,
-  } = useSubscriptions({
-    isAuthenticated,
-    onRequireAuth: requireAuth,
-  });
+  const [isLoadingListings, setIsLoadingListings] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const fetchListings = useCallback(async () => {
+    setIsLoadingListings(true);
+    setError("");
+
+    try {
+      const response = await axiosClient.get("/mineral-listings/approved");
+
+      setListings(
+        Array.isArray(response.data?.listings)
+          ? response.data.listings
+          : []
+      );
+    } catch (err) {
+      console.error("Error loading mineral listings:", err);
+      setError("Imeshindikana kupakia matangazo. Tafadhali jaribu tena.");
+    } finally {
+      setIsLoadingListings(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchListings();
+  }, [fetchListings]);
+
+  const handleInputChange = (
+    event: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
+  ) => {
+    const { name, value } = event.target;
+
+    setForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    setError("");
+    setSuccess("");
+
+    if (!isAuthenticated) {
+      requireAuth();
+      return;
+    }
+
+    const weight = Number(form.weight);
+    const price = Number(form.price);
+
+    if (!form.mineralType.trim() || !form.description.trim()) {
+      setError("Tafadhali jaza aina ya madini na maelezo.");
+      return;
+    }
+
+    if (!form.location.trim() || !form.contact.trim()) {
+      setError("Tafadhali jaza eneo na mawasiliano.");
+      return;
+    }
+
+    if (!Number.isFinite(weight) || weight <= 0) {
+      setError("Weka uzito sahihi unaozidi sifuri.");
+      return;
+    }
+
+    if (!Number.isFinite(price) || price <= 0) {
+      setError("Weka bei sahihi inayozidi sifuri.");
+      return;
+    }
+
+    const imageUrls = form.imageUrls
+      .split("\n")
+      .map((url) => url.trim())
+      .filter(Boolean);
+
+    if (imageUrls.length > 5) {
+      setError("Unaweza kuweka viungo vya picha visivyozidi 5.");
+      return;
+    }
+
+    for (const url of imageUrls) {
+      try {
+        const parsedUrl = new URL(url);
+
+        if (parsedUrl.protocol !== "https:") {
+          setError("Viungo vyote vya picha lazima vianze na https://");
+          return;
+        }
+      } catch {
+        setError("Kuna kiungo cha picha kisicho sahihi.");
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await axiosClient.post("/mineral-listings", {
+        mineralType: form.mineralType.trim(),
+        description: form.description.trim(),
+        location: form.location.trim(),
+        weight,
+        weightUnit: form.weightUnit,
+        price,
+        currency: form.currency,
+        contact: form.contact.trim(),
+        imageUrls,
+      });
+
+      setSuccess(
+        "Tangazo lako limetumwa kwa mafanikio. Litasubiri ukaguzi kabla ya kuonekana sokoni."
+      );
+
+      setForm(initialForm);
+    } catch (err) {
+      console.error("Error submitting mineral listing:", err);
+      setError(
+        "Tangazo halikutumwa. Hakikisha umeingia kwenye akaunti na jaribu tena."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleReport = async (listing: MineralListing) => {
+    const listingId = listing._id || listing.id;
+
+    if (!listingId) {
+      setError("Tangazo hili halina kitambulisho sahihi.");
+      return;
+    }
+
+    if (!isAuthenticated) {
+      requireAuth();
+      return;
+    }
+
+    const reason = window.prompt(
+      "Eleza sababu ya kuripoti tangazo hili:"
+    );
+
+    if (!reason || !reason.trim()) {
+      return;
+    }
+
+    try {
+      await axiosClient.post(
+        `/mineral-listings/${listingId}/report`,
+        { reason: reason.trim() }
+      );
+
+      window.alert("Asante. Ripoti yako imepokelewa kwa ukaguzi.");
+    } catch (err) {
+      console.error("Error reporting listing:", err);
+      window.alert("Imeshindikana kutuma ripoti. Tafadhali jaribu tena.");
+    }
+  };
 
   const onSendTestNotification = () => {
-    const notification = {
-      title: "Test Notification",
-      body: "This is a test notification",
-      user_uid: user?.uid,
-      subroute: "/shop",
-    };
-    axiosClient.post("/notifications/send", { notifications: [notification] });
+    if (!user?.uid) return;
+
+    axiosClient.post("/notifications/send", {
+      notifications: [
+        {
+          title: "Test Notification",
+          body: "This is a test notification",
+          user_uid: user.uid,
+          subroute: "/shop",
+        },
+      ],
+    }).catch((err) => {
+      console.error("Notification error:", err);
+    });
   };
 
   return (
@@ -55,42 +291,353 @@ const Shop = () => {
         isLoading={isAuthLoading}
       />
 
-      <ProductCard
-        name="Apple Pie"
-        description="You know what this is. Pie. Apples. Apple pie."
-        price={0.1}
-        pictureURL="https://upload.wikimedia.org/wikipedia/commons/4/4b/Apple_pie.jpg"
-        onClickBuyWithPi={() => orderProduct("Order Apple Pie", 0.1, { productId: "apple_pie_1" })}
-        onClickBuyWithIrra={() =>
-          orderProduct("Order Apple Pie", 0.1, { productId: "apple_pie_1" }, IRRA_TOKEN_CANONICAL)
-        }
-        disabled={isLoading}
-      />
+      <main style={pageStyle}>
+        <section
+          style={{
+            background: "#123d2b",
+            color: "white",
+            padding: "35px 20px",
+            borderRadius: "14px",
+            marginBottom: "25px",
+            textAlign: "center",
+          }}
+        >
+          <h1 style={{ margin: "0 0 12px" }}>
+            GFAMOUS MINERAL MARKET
+          </h1>
 
-      <ProductCard
-        name="Lemon Meringue Pie"
-        description="Order at your own risk."
-        price={0.2}
-        pictureURL="https://live.staticflickr.com/1156/5134246283_f2686ff8a8_b.jpg"
-        onClickBuyWithPi={() =>
-          orderProduct("Order Lemon Meringue Pie", 0.2, { productId: "lemon_pie_1" })
-        }
-        onClickBuyWithIrra={() =>
-          orderProduct("Order Lemon Meringue Pie", 0.2, { productId: "lemon_pie_1" }, IRRA_TOKEN_CANONICAL)
-        }
-        disabled={isLoading}
-      />
+          <p style={{ lineHeight: 1.6 }}>
+            Soko la kuunganisha wanunuzi na wauzaji wa dhahabu
+            na madini mengine.
+          </p>
 
-      {user?.roles.includes("core_team") && (
-        <SubscriptionCard
-          onClickSubscribe={subscribe}
-          onClickProcess={processSubscriptions}
-          result={subscriptionResult}
-          disabled={isSubscriptionLoading}
+          <p style={{ fontSize: "14px" }}>
+            Tanzania | Nunua kwa taarifa sahihi. Uza kwa uwazi.
+          </p>
+        </section>
+
+        <section style={cardStyle}>
+          <h2>Matangazo ya Madini</h2>
+
+          <p style={{ color: "#666" }}>
+            Hapa yanaonekana matangazo yaliyoidhinishwa pekee.
+          </p>
+
+          <button
+            type="button"
+            style={buttonStyle}
+            onClick={() => void fetchListings()}
+            disabled={isLoadingListings}
+          >
+            {isLoadingListings ? "Inapakia..." : "Onyesha upya"}
+          </button>
+
+          {isLoadingListings && (
+            <p>Inapakia matangazo...</p>
+          )}
+
+          {error && (
+            <p role="alert" style={{ color: "#b00020" }}>
+              {error}
+            </p>
+          )}
+
+          {!isLoadingListings && listings.length === 0 && !error && (
+            <p>
+              Bado hakuna matangazo yaliyoidhinishwa.
+              Unaweza kutuma tangazo lako hapa chini.
+            </p>
+          )}
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+              gap: "16px",
+              marginTop: "20px",
+            }}
+          >
+            {listings.map((listing, index) => (
+              <article
+                key={listing._id || listing.id || index}
+                style={{
+                  border: "1px solid #ddd",
+                  borderRadius: "10px",
+                  overflow: "hidden",
+                  background: "white",
+                }}
+              >
+                {listing.imageUrls?.[0] ? (
+                  <img
+                    src={listing.imageUrls[0]}
+                    alt={listing.mineralType}
+                    loading="lazy"
+                    style={{
+                      width: "100%",
+                      height: "190px",
+                      objectFit: "cover",
+                    }}
+                    onError={(event) => {
+                      event.currentTarget.style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      height: "130px",
+                      background: "#eeeeee",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#666",
+                    }}
+                  >
+                    Hakuna picha
+                  </div>
+                )}
+
+                <div style={{ padding: "15px" }}>
+                  <h3>{listing.mineralType}</h3>
+
+                  <p>{listing.description}</p>
+
+                  <p>
+                    <strong>Eneo:</strong> {listing.location}
+                  </p>
+
+                  <p>
+                    <strong>Uzito:</strong> {listing.weight}{" "}
+                    {listing.weightUnit}
+                  </p>
+
+                  <p>
+                    <strong>Bei:</strong>{" "}
+                    {listing.price.toLocaleString()} {listing.currency}
+                  </p>
+
+                  <p>
+                    <strong>Mawasiliano:</strong> {listing.contact}
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleReport(listing)}
+                    style={{
+                      ...buttonStyle,
+                      background: "#8b2929",
+                      marginTop: "8px",
+                    }}
+                  >
+                    Ripoti tangazo
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section style={cardStyle}>
+          <h2>Weka Tangazo Lako</h2>
+
+          <p style={{ color: "#666" }}>
+            Wauzaji wanaweza kutuma taarifa za madini yao.
+            Tangazo litakaguliwa kabla ya kuonekana kwa wanunuzi.
+          </p>
+
+          {!isAuthenticated && (
+            <p>
+              Ingia kwa kutumia Pi ili uweze kutuma tangazo.
+            </p>
+          )}
+
+          <form onSubmit={handleSubmit}>
+            <label htmlFor="mineralType">
+              Aina ya madini *
+            </label>
+            <input
+              id="mineralType"
+              name="mineralType"
+              value={form.mineralType}
+              onChange={handleInputChange}
+              placeholder="Mfano: Gold, Tanzanite, Copper"
+              style={inputStyle}
+              required
+            />
+
+            <label htmlFor="description">
+              Maelezo ya madini *
+            </label>
+            <textarea
+              id="description"
+              name="description"
+              value={form.description}
+              onChange={handleInputChange}
+              placeholder="Eleza hali na taarifa za madini..."
+              style={{ ...inputStyle, minHeight: "100px" }}
+              required
+            />
+
+            <label htmlFor="location">
+              Eneo la madini *
+            </label>
+            <input
+              id="location"
+              name="location"
+              value={form.location}
+              onChange={handleInputChange}
+              placeholder="Mfano: Nyamongo, Mara, Tanzania"
+              style={inputStyle}
+              required
+            />
+
+            <label htmlFor="weight">
+              Uzito *
+            </label>
+            <input
+              id="weight"
+              name="weight"
+              type="number"
+              min="0.001"
+              step="any"
+              value={form.weight}
+              onChange={handleInputChange}
+              placeholder="Weka uzito"
+              style={inputStyle}
+              required
+            />
+
+            <label htmlFor="weightUnit">
+              Kipimo cha uzito
+            </label>
+            <select
+              id="weightUnit"
+              name="weightUnit"
+              value={form.weightUnit}
+              onChange={handleInputChange}
+              style={inputStyle}
+            >
+              <option value="kg">Kilogram (kg)</option>
+              <option value="g">Gram (g)</option>
+            </select>
+
+            <label htmlFor="price">
+              Bei *
+            </label>
+            <input
+              id="price"
+              name="price"
+              type="number"
+              min="0.01"
+              step="any"
+              value={form.price}
+              onChange={handleInputChange}
+              placeholder="Weka bei"
+              style={inputStyle}
+              required
+            />
+
+            <label htmlFor="currency">
+              Sarafu
+            </label>
+            <select
+              id="currency"
+              name="currency"
+              value={form.currency}
+              onChange={handleInputChange}
+              style={inputStyle}
+            >
+              <option value="TZS">Tanzanian Shilling (TZS)</option>
+              <option value="USD">US Dollar (USD)</option>
+            </select>
+
+            <label htmlFor="contact">
+              Mawasiliano ya muuzaji *
+            </label>
+            <input
+              id="contact"
+              name="contact"
+              value={form.contact}
+              onChange={handleInputChange}
+              placeholder="Namba ya simu au mawasiliano"
+              style={inputStyle}
+              required
+            />
+
+            <label htmlFor="imageUrls">
+              Viungo vya picha (si lazima)
+            </label>
+            <textarea
+              id="imageUrls"
+              name="imageUrls"
+              value={form.imageUrls}
+              onChange={handleInputChange}
+              placeholder={"Bandika kiungo cha picha hapa.\nKiungo kimoja kwa kila mstari."}
+              style={{ ...inputStyle, minHeight: "90px" }}
+            />
+
+            <p style={{ fontSize: "13px", color: "#666" }}>
+              Unaweza kuweka hadi viungo 5 vya picha.
+              Kila kiungo lazima kiwe cha HTTPS.
+            </p>
+
+            {success && (
+              <p
+                role="status"
+                style={{ color: "#176b43", fontWeight: "bold" }}
+              >
+                {success}
+              </p>
+            )}
+
+            {error && (
+              <p role="alert" style={{ color: "#b00020" }}>
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              style={{
+                ...buttonStyle,
+                width: "100%",
+                opacity: isSubmitting ? 0.6 : 1,
+              }}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? "Inatuma tangazo..." : "Tuma Tangazo"}
+            </button>
+          </form>
+        </section>
+
+        <footer
+          style={{
+            textAlign: "center",
+            padding: "20px",
+            color: "#666",
+            fontSize: "13px",
+          }}
+        >
+          <p>GFAMOUS MINERAL MARKET</p>
+          <p>Contact: gfamous133@gmail.com</p>
+          <p>
+            <a href="https://gfamous133-hub.github.io/demo/privacy-policy.html">
+              Privacy Policy
+            </a>
+            {" | "}
+            <a href="https://gfamous133-hub.github.io/demo/terms-of-service.html">
+              Terms of Service
+            </a>
+          </p>
+        </footer>
+      </main>
+
+      {showSignIn && (
+        <SignIn
+          onSignIn={signIn}
+          onModalClose={closeSignIn}
+          disabled={isAuthLoading}
         />
       )}
-
-      {showSignIn && <SignIn onSignIn={signIn} onModalClose={closeSignIn} disabled={isAuthLoading} />}
     </>
   );
 };
