@@ -92,6 +92,13 @@ app.get("/", async (_, res) => {
   });
 });
 
+app.get("/health", async (_, res) => {
+  res.status(200).json({
+    status: "ok",
+    message: "GFAMOUS MINERAL MARKET API is running",
+  });
+});
+
 const start = async () => {
   let client: MongoClient | undefined;
 
