@@ -111,4 +111,4 @@ const start = async () => {
       await client.close().catch(() => undefined);
     }
 
-    process.exit( 
+    process.exit
