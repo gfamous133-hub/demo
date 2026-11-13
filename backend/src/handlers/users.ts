@@ -1,11 +1,16 @@
 
 import { Router } from "express";
+
 import platformAPIClient from "../services/platformAPIClient";
+
 import env from "../environments";
 
 export default function mountUserEndpoints(router: Router) {
+
   router.post("/signin", async (req, res) => {
+
     const auth = req.body?.authResult;
+
     const userCollection = req.app.locals.userCollection;
 
     if (!auth?.accessToken || !auth?.user?.uid) {
@@ -112,4 +117,5 @@ export default function mountUserEndpoints(router: Router) {
       message: "User signed out",
     });
   });
+
 }
