@@ -3,6 +3,13 @@ import { Router } from "express";
 import { ObjectId } from "mongodb";
 
 export default function mountMineralListingEndpoints(router: Router) {
+  const isModerator = (user: any) =>
+    !!user &&
+    Array.isArray(user.roles) &&
+    user.roles.some((role: string) =>
+      ["core_team", "admin"].includes(role)
+    );
+
   // Display approved mineral listings to buyers
   router.get("/approved", async (req, res) => {
     try {
@@ -21,6 +28,37 @@ export default function mountMineralListingEndpoints(router: Router) {
     } catch (error) {
       console.error("Error loading mineral listings:", error);
       return res.status(500).json({ error: "Failed to load listings" });
+    }
+  });
+
+  // Display pending listings to authorized moderators only
+  router.get("/pending", async (req, res) => {
+    try {
+      const user = req.session.currentUser;
+
+      if (!isModerator(user)) {
+        return res.status(403).json({
+          error: "Admin access required",
+        });
+      }
+
+      const collection = req.app.locals.mineralListingCollection;
+
+      if (!collection) {
+        return res.status(503).json({ error: "Database unavailable" });
+      }
+
+      const listings = await collection
+        .find({ status: "pending" })
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      return res.status(200).json({ listings });
+    } catch (error) {
+      console.error("Error loading pending listings:", error);
+      return res.status(500).json({
+        error: "Failed to load pending listings",
+      });
     }
   });
 
@@ -186,13 +224,10 @@ export default function mountMineralListingEndpoints(router: Router) {
     try {
       const user = req.session.currentUser;
 
-      if (
-        !user ||
-        !user.roles.some((role: string) =>
-          ["core_team", "admin"].includes(role)
-        )
-      ) {
-        return res.status(403).json({ error: "Moderator access required" });
+      if (!isModerator(user)) {
+        return res.status(403).json({
+          error: "Moderator access required",
+        });
       }
 
       const listingId = req.params.id;
