@@ -1,3 +1,4 @@
+
 name: Build and Deploy GFAMOUS MINERAL MARKET
 
 on:
@@ -36,6 +37,8 @@ jobs:
 
       - name: Build frontend
         working-directory: frontend
+        env:
+          VITE_BACKEND_URL: https://gfamous-mineral-market-api.onrender.com
         run: yarn build
 
       - name: Preserve legal pages
