@@ -1,16 +1,11 @@
 
 import { Router } from "express";
-
 import platformAPIClient from "../services/platformAPIClient";
-
 import env from "../environments";
 
 export default function mountUserEndpoints(router: Router) {
-
   router.post("/signin", async (req, res) => {
-
     const auth = req.body?.authResult;
-
     const userCollection = req.app.locals.userCollection;
 
     if (!auth?.accessToken || !auth?.user?.uid) {
@@ -39,6 +34,7 @@ export default function mountUserEndpoints(router: Router) {
       verifiedUser = response.data;
     } catch (err) {
       console.error("Error verifying Pi access token:", err);
+
       return res.status(401).json({
         error: "invalid_token",
         message: "Invalid access token",
@@ -77,7 +73,7 @@ export default function mountUserEndpoints(router: Router) {
               accessToken: auth.accessToken,
               roles,
             },
-          },
+          }
         );
 
         currentUser = await userCollection.findOne({
@@ -96,13 +92,28 @@ export default function mountUserEndpoints(router: Router) {
         });
       }
 
+      if (!currentUser) {
+        return res.status(500).json({
+          error: "user_not_found",
+          message: "Could not retrieve signed-in user",
+        });
+      }
+
       req.session.currentUser = currentUser;
 
       return res.status(200).json({
         message: "User signed in",
+        user: {
+          uid: currentUser.uid,
+          username: currentUser.username,
+          roles: Array.isArray(currentUser.roles)
+            ? currentUser.roles
+            : [],
+        },
       });
     } catch (err) {
       console.error("Error during sign-in:", err);
+
       return res.status(500).json({
         error: "internal_error",
         message: "Failed to sign in",
@@ -117,5 +128,4 @@ export default function mountUserEndpoints(router: Router) {
       message: "User signed out",
     });
   });
-
 }
