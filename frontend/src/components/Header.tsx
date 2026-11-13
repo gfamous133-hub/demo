@@ -1,5 +1,6 @@
 
 import type { CSSProperties } from "react";
+import { Link } from "react-router-dom";
 import type { User } from "../types/pi.ts";
 
 interface HeaderProps {
@@ -37,6 +38,7 @@ const buttonStyle: CSSProperties = {
   backgroundColor: "transparent",
   color: "white",
   cursor: "pointer",
+  textDecoration: "none",
 };
 
 const Header = ({
@@ -56,6 +58,12 @@ const Header = ({
         {user ? (
           <>
             <span>@{user.username}</span>
+
+            {user.roles.includes("admin") && (
+              <Link to="/admin" style={buttonStyle}>
+                Admin Dashboard
+              </Link>
+            )}
 
             <button
               type="button"
