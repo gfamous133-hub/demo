@@ -1,4 +1,3 @@
-
 import fs from "fs";
 import path from "path";
 import cors from "cors";
@@ -24,6 +23,8 @@ if (!env.session_secret || env.session_secret === "This is my session secret") {
 }
 
 const app: express.Application = express();
+
+app.set("trust proxy", 1);
 
 app.use(logger("dev"));
 
