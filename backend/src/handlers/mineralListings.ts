@@ -1,9 +1,12 @@
 
 import { Router } from "express";
 import { ObjectId } from "mongodb";
+import type { UserData } from "../types/user";
 
 export default function mountMineralListingEndpoints(router: Router) {
-  const isModerator = (user: any) =>
+  const isModerator = (
+    user: UserData | null | undefined
+  ): user is UserData =>
     !!user &&
     Array.isArray(user.roles) &&
     user.roles.some((role: string) =>
