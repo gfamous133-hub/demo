@@ -1,6 +1,6 @@
 
-import { useCallback, useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 
 import Header from "../components/Header";
 import SignIn from "../components/SignIn";
@@ -35,6 +35,14 @@ interface ListingForm {
   imageUrls: string;
 }
 
+interface CloudinarySignature {
+  cloudName: string;
+  apiKey: string;
+  timestamp: number;
+  folder: string;
+  signature: string;
+}
+
 const initialForm: ListingForm = {
   mineralType: "",
   description: "",
@@ -46,6 +54,15 @@ const initialForm: ListingForm = {
   contact: "",
   imageUrls: "",
 };
+
+const MAX_IMAGES = 5;
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+
+const allowedImageTypes = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
 
 const pageStyle = {
   maxWidth: "1100px",
@@ -98,6 +115,9 @@ const Shop = () => {
 
   const [listings, setListings] = useState<MineralListing[]>([]);
   const [form, setForm] = useState<ListingForm>(initialForm);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [isLoadingListings, setIsLoadingListings] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -130,7 +150,7 @@ const Shop = () => {
   }, [fetchListings]);
 
   const handleInputChange = (
-    event: React.ChangeEvent<
+    event: ChangeEvent<
       HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
     >
   ) => {
@@ -140,6 +160,92 @@ const Shop = () => {
       ...previous,
       [name]: value,
     }));
+  };
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setError("");
+    setSuccess("");
+
+    const files = Array.from(event.target.files || []);
+
+    if (files.length > MAX_IMAGES) {
+      setSelectedFiles([]);
+      event.target.value = "";
+      setError("Chagua picha zisizozidi 5.");
+      return;
+    }
+
+    for (const file of files) {
+      if (!allowedImageTypes.includes(file.type)) {
+        setSelectedFiles([]);
+        event.target.value = "";
+        setError("Tumia picha za JPG, PNG au WebP pekee.");
+        return;
+      }
+
+      if (file.size > MAX_IMAGE_SIZE) {
+        setSelectedFiles([]);
+        event.target.value = "";
+        setError("Kila picha lazima isiwe kubwa kuliko MB 5.");
+        return;
+      }
+    }
+
+    setSelectedFiles(files);
+  };
+
+  const uploadImages = async (files: File[]): Promise<string[]> => {
+    if (files.length === 0) {
+      return [];
+    }
+
+    const signatureResponse = await axiosClient.post<CloudinarySignature>(
+      "/mineral-listings/images/sign"
+    );
+
+    const {
+      cloudName,
+      apiKey,
+      timestamp,
+      folder,
+      signature,
+    } = signatureResponse.data;
+
+    if (!cloudName || !apiKey || !timestamp || !folder || !signature) {
+      throw new Error("Taarifa za kupakia picha hazijakamilika.");
+    }
+
+    const uploadedUrls: string[] = [];
+
+    for (const file of files) {
+      const uploadData = new FormData();
+
+      uploadData.append("file", file);
+      uploadData.append("api_key", apiKey);
+      uploadData.append("timestamp", String(timestamp));
+      uploadData.append("folder", folder);
+      uploadData.append("signature", signature);
+
+      const uploadResponse = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+        {
+          method: "POST",
+          body: uploadData,
+        }
+      );
+
+      const uploadResult = await uploadResponse.json();
+
+      if (!uploadResponse.ok || !uploadResult.secure_url) {
+        throw new Error(
+          uploadResult.error?.message || "Imeshindikana kupakia picha."
+        );
+      }
+
+      uploadedUrls.push(uploadResult.secure_url);
+    }
+
+    return uploadedUrls;
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -176,17 +282,17 @@ const Shop = () => {
       return;
     }
 
-    const imageUrls = form.imageUrls
+    const existingImageUrls = form.imageUrls
       .split("\n")
       .map((url) => url.trim())
       .filter(Boolean);
 
-    if (imageUrls.length > 5) {
-      setError("Unaweza kuweka viungo vya picha visivyozidi 5.");
+    if (existingImageUrls.length + selectedFiles.length > MAX_IMAGES) {
+      setError("Jumla ya picha na viungo vya picha visizidi 5.");
       return;
     }
 
-    for (const url of imageUrls) {
+    for (const url of existingImageUrls) {
       try {
         const parsedUrl = new URL(url);
 
@@ -200,9 +306,28 @@ const Shop = () => {
       }
     }
 
+    for (const file of selectedFiles) {
+      if (!allowedImageTypes.includes(file.type)) {
+        setError("Tumia picha za JPG, PNG au WebP pekee.");
+        return;
+      }
+
+      if (file.size > MAX_IMAGE_SIZE) {
+        setError("Kila picha lazima isiwe kubwa kuliko MB 5.");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
+      const uploadedUrls = await uploadImages(selectedFiles);
+
+      const imageUrls = [
+        ...existingImageUrls,
+        ...uploadedUrls,
+      ];
+
       await axiosClient.post("/mineral-listings", {
         mineralType: form.mineralType.trim(),
         description: form.description.trim(),
@@ -220,11 +345,21 @@ const Shop = () => {
       );
 
       setForm(initialForm);
+      setSelectedFiles([]);
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+
     } catch (err) {
       console.error("Error submitting mineral listing:", err);
-      setError(
-        "Tangazo halikutumwa. Hakikisha umeingia kwenye akaunti na jaribu tena."
-      );
+
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Tangazo halikutumwa. Tafadhali jaribu tena.";
+
+      setError(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -563,6 +698,62 @@ const Shop = () => {
               required
             />
 
+            <label htmlFor="imageFiles">
+              Chagua picha kutoka Gallery ya simu
+            </label>
+            <input
+              ref={fileInputRef}
+              id="imageFiles"
+              name="imageFiles"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              onChange={handleFileChange}
+              style={inputStyle}
+            />
+
+            <p style={{ fontSize: "13px", color: "#666" }}>
+              Chagua hadi picha 5. JPG, PNG au WebP.
+              Kila picha isiwe kubwa kuliko MB 5.
+            </p>
+
+            {selectedFiles.length > 0 && (
+              <div
+                style={{
+                  background: "#f2f7f3",
+                  padding: "12px",
+                  borderRadius: "7px",
+                  marginBottom: "14px",
+                }}
+              >
+                <strong>Picha ulizochagua: {selectedFiles.length}</strong>
+
+                {selectedFiles.map((file, index) => (
+                  <p key={`${file.name}-${index}`} style={{ fontSize: "13px" }}>
+                    {file.name} — {(file.size / (1024 * 1024)).toFixed(2)} MB
+                  </p>
+                ))}
+
+                <button
+                  type="button"
+                  style={{
+                    ...buttonStyle,
+                    background: "#8b2929",
+                    padding: "8px 12px",
+                  }}
+                  onClick={() => {
+                    setSelectedFiles([]);
+
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = "";
+                    }
+                  }}
+                >
+                  Ondoa picha
+                </button>
+              </div>
+            )}
+
             <label htmlFor="imageUrls">
               Viungo vya picha (si lazima)
             </label>
@@ -576,8 +767,8 @@ const Shop = () => {
             />
 
             <p style={{ fontSize: "13px", color: "#666" }}>
-              Unaweza kuweka hadi viungo 5 vya picha.
-              Kila kiungo lazima kiwe cha HTTPS.
+              Jumla ya picha kutoka Gallery na viungo visizidi 5.
+              Viungo lazima viwe vya HTTPS.
             </p>
 
             {success && (
@@ -604,7 +795,7 @@ const Shop = () => {
               }}
               disabled={isSubmitting}
             >
-              {isSubmitting ? "Inatuma tangazo..." : "Tuma Tangazo"}
+              {isSubmitting ? "Inapakia picha na kutuma tangazo..." : "Tuma Tangazo"}
             </button>
           </form>
         </section>
