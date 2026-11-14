@@ -14,7 +14,7 @@ export default function mountMineralListingEndpoints(router: Router) {
       ["core_team", "admin"].includes(role)
     );
 
-  // Display approved mineral listings to buyers
+  // Display approved mineral listings
   router.get("/approved", async (req, res) => {
     try {
       const collection = req.app.locals.mineralListingCollection;
@@ -35,15 +35,13 @@ export default function mountMineralListingEndpoints(router: Router) {
     }
   });
 
-  // Display pending listings to authorized moderators only
+  // Display pending listings to moderators
   router.get("/pending", async (req, res) => {
     try {
       const user = req.session.currentUser;
 
       if (!isModerator(user)) {
-        return res.status(403).json({
-          error: "Admin access required",
-        });
+        return res.status(403).json({ error: "Admin access required" });
       }
 
       const collection = req.app.locals.mineralListingCollection;
@@ -66,15 +64,13 @@ export default function mountMineralListingEndpoints(router: Router) {
     }
   });
 
-  // Create a secure Cloudinary upload signature
+  // Create secure Cloudinary upload signature
   router.post("/images/sign", async (req, res) => {
     try {
       const user = req.session.currentUser;
 
       if (!user) {
-        return res.status(401).json({
-          error: "Please sign in first",
-        });
+        return res.status(401).json({ error: "Please sign in first" });
       }
 
       const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
@@ -90,8 +86,7 @@ export default function mountMineralListingEndpoints(router: Router) {
       const timestamp = Math.floor(Date.now() / 1000);
       const folder = "gfamous/mineral-listings";
 
-      const signatureString =
-        `folder=${folder}&timestamp=${timestamp}`;
+      const signatureString = `folder=${folder}&timestamp=${timestamp}`;
 
       const signature = createHmac("sha1", apiSecret)
         .update(signatureString)
@@ -105,7 +100,7 @@ export default function mountMineralListingEndpoints(router: Router) {
         signature,
       });
     } catch (error) {
-      console.error("Error creating image upload signature:", error);
+      console.error("Error creating Cloudinary signature:", error);
       return res.status(500).json({
         error: "Failed to prepare image upload",
       });
