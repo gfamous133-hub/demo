@@ -1,6 +1,7 @@
 
 import { Router } from "express";
 import { ObjectId } from "mongodb";
+import { createHmac } from "crypto";
 import type { UserData } from "../types/user";
 
 export default function mountMineralListingEndpoints(router: Router) {
@@ -61,6 +62,52 @@ export default function mountMineralListingEndpoints(router: Router) {
       console.error("Error loading pending listings:", error);
       return res.status(500).json({
         error: "Failed to load pending listings",
+      });
+    }
+  });
+
+  // Create a secure Cloudinary upload signature
+  router.post("/images/sign", async (req, res) => {
+    try {
+      const user = req.session.currentUser;
+
+      if (!user) {
+        return res.status(401).json({
+          error: "Please sign in first",
+        });
+      }
+
+      const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+      const apiKey = process.env.CLOUDINARY_API_KEY;
+      const apiSecret = process.env.CLOUDINARY_API_SECRET;
+
+      if (!cloudName || !apiKey || !apiSecret) {
+        return res.status(503).json({
+          error: "Image upload service is not configured",
+        });
+      }
+
+      const timestamp = Math.floor(Date.now() / 1000);
+      const folder = "gfamous/mineral-listings";
+
+      const signatureString =
+        `folder=${folder}&timestamp=${timestamp}`;
+
+      const signature = createHmac("sha1", apiSecret)
+        .update(signatureString)
+        .digest("hex");
+
+      return res.status(200).json({
+        cloudName,
+        apiKey,
+        timestamp,
+        folder,
+        signature,
+      });
+    } catch (error) {
+      console.error("Error creating image upload signature:", error);
+      return res.status(500).json({
+        error: "Failed to prepare image upload",
       });
     }
   });
