@@ -1,7 +1,7 @@
 
 import { Router } from "express";
 import { ObjectId } from "mongodb";
-import { createHmac } from "crypto";
+import { createHash } from "crypto";
 import type { UserData } from "../types/user";
 
 export default function mountMineralListingEndpoints(router: Router) {
@@ -88,8 +88,10 @@ export default function mountMineralListingEndpoints(router: Router) {
 
       const signatureString = `folder=${folder}&timestamp=${timestamp}`;
 
-      const signature = createHmac("sha1", apiSecret)
-        .update(signatureString)
+      // Cloudinary requires SHA-1 of the signed parameters
+      // followed directly by the API secret.
+      const signature = createHash("sha1")
+        .update(signatureString + apiSecret)
         .digest("hex");
 
       return res.status(200).json({
